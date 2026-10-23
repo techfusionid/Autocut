@@ -1,0 +1,26 @@
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+
+# Python environments, caches, and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data (database, queue metadata, and uploaded images)
+data/
+
+# PNG files saved from the local terminal menu
+downloads/
+
+# User-provided root-level images used for local testing
+/*.png
+/*.jpg
+/*.jpeg

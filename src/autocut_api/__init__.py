@@ -1,0 +1,2 @@
+"""Autocut image processing API."""
+
