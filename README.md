@@ -1,45 +1,37 @@
 # Autocut
 
-Autocut menerima gambar JPEG/PNG, memotong tepi gambar, lalu menyediakan hasil PNG melalui API. API dan worker berjalan sebagai proses terpisah. Hasil otomatis yang batas potongnya meragukan berstatus `needs_review` dan tidak menghasilkan PNG.
+Autocut memotong gambar JPEG/PNG dan langsung menghasilkan PNG. Tidak ada database, antrean, atau worker.
 
-## Menjalankan di komputer sendiri
+## Potong lewat terminal
 
-Pastikan virtual environment dan dependensi proyek sudah tersedia, lalu dari folder Autocut jalankan:
+Jalankan satu perintah dari folder proyek:
 
 ```sh
 sh run-local.sh
 ```
 
-Menu terminal akan memandu upload dan penyimpanan hasil. Pilih `1`, masukkan atau seret file gambar ke terminal, lalu tekan Enter. Pilih `2` untuk menyimpan ulang hasil yang sudah selesai. Pilih `q` untuk berhenti. Mode lokal hanya membuka API di komputer sendiri dan menonaktifkan bearer token.
+Tempel atau seret path gambar ke terminal lalu tekan Enter. Hasil tersimpan di `downloads/`. Ketik `q` untuk keluar. Mode ini mencoba deteksi batas otomatis; jika batasnya tidak jelas, gambar tidak dipotong.
 
-## Menjalankan dengan Docker
-
-Salin `.env.example` menjadi `.env`, lalu ganti nilai `API_TOKEN` dengan token pribadi. Jalankan Docker Desktop, kemudian:
+## Jalankan API dengan Docker
 
 ```sh
 docker compose up --build -d
 ```
 
-API tersedia di `http://127.0.0.1:8000`; worker akan memproses antrean secara terpisah. Data pekerjaan dan gambar disimpan di volume Docker `autocut_data`, sehingga tetap ada setelah container dihentikan. Untuk menghentikan layanan:
+API tersedia di `http://127.0.0.1:8000`. Untuk berhenti, jalankan `docker compose down`. Tidak perlu token atau volume database.
 
-```sh
-docker compose down
-```
+Compose membaca batas upload dan piksel dari `.env`; salin `.env.example` menjadi `.env` bila ingin mengubah batas bawaan.
 
-## Menyambungkan n8n
+## Sambungkan ke n8n
 
-Jika n8n berjalan di container pada mesin Docker yang sama, sambungkan container n8n ke jaringan Autocut satu kali:
+Untuk n8n dalam container di mesin yang sama, sambungkan containernya satu kali ke jaringan Autocut:
 
 ```sh
 docker network connect autocut <nama-container-n8n>
 ```
 
-Di node **HTTP Request** n8n, gunakan alamat dasar `http://api:8000` dan autentikasi **Bearer** dengan token yang sama dari `.env`. Jangan gunakan `localhost` dari dalam container n8n, karena itu menunjuk ke container n8n sendiri.
+Di node **HTTP Request**, gunakan `POST http://api:8000/crop`. Pilih body **Form-Data**, kirim gambar dari binary property bernama `image`, dan tambahkan `mode=auto`. Atur format respons menjadi **File** agar n8n menerima PNG hasilnya. Tidak perlu autentikasi.
 
-Alur request:
+Untuk potong manual, gunakan `mode=manual` dan field opsional `crop_left`, `crop_top`, `crop_right`, `crop_bottom` dalam piksel. Gambar harus JPEG/PNG statis; batas bawaan 15 MiB dan 25 juta piksel. Untuk menu lokal, atur `MAX_UPLOAD_BYTES` atau `MAX_IMAGE_PIXELS` di environment sebelum menjalankan skrip.
 
-1. **Upload:** `POST /jobs`, autentikasi Bearer, body **Form-Data**. Kirim file sebagai field binary bernama `image`; sertakan `mode=auto`. Untuk potong manual, gunakan `mode=manual` dan field opsional `crop_left`, `crop_top`, `crop_right`, `crop_bottom` dalam piksel.
-2. **Cek status:** polling URL relatif `status_url` dari respons upload, digabungkan dengan alamat dasar `http://api:8000`. Status akhir dapat berupa `succeeded`, `failed`, atau `needs_review`.
-3. **Ambil hasil:** jika status `succeeded`, unduh URL relatif `result_url` sebagai file/binary PNG. Status `failed` atau `needs_review` tidak memiliki hasil untuk diunduh.
-
-Catatan: API memerlukan `API_TOKEN` saat berjalan di Docker. Jika n8n ada di mesin lain, gunakan alamat server yang dapat dijangkau; gunakan HTTPS sebelum membuka API ke jaringan publik. Proyek ini menyediakan API, bukan workflow n8n siap impor.
+Jika n8n berjalan di luar Docker pada mesin yang sama, gunakan `http://127.0.0.1:8000/crop`. Jangan gunakan `localhost` dari dalam container n8n; itu menunjuk ke container n8n sendiri. Untuk server lain gunakan alamat yang dapat dijangkau dan HTTPS sebelum membuka API ke jaringan publik.

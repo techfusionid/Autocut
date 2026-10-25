@@ -14,7 +14,7 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Runtime data (database, queue metadata, and uploaded images)
+# Legacy local data and saved PNG results
 data/
 
 # PNG files saved from the local terminal menu

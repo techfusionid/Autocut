@@ -8,7 +8,5 @@ if [ ! -x .venv/bin/python ]; then
   exit 1
 fi
 
-export DATA_DIR="${DATA_DIR:-$PWD/data}"
-unset API_TOKEN
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 exec .venv/bin/python -m autocut_api.local
