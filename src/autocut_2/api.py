@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -7,7 +8,7 @@ from typing import Annotated
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .image import (
@@ -76,7 +77,7 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(413, str(exc))
     if isinstance(exc, PosterNotFound):
         return HTTPException(422, str(exc))
-    if isinstance(exc, InvalidImage):
+    if isinstance(exc, InvalidImage) or isinstance(exc, UnidentifiedImageError):
         return HTTPException(415, str(exc))
     if isinstance(exc, httpx.HTTPStatusError):
         return HTTPException(502, f"upstream returned {exc.response.status_code}")
@@ -98,21 +99,28 @@ async def _read_upload(file: UploadFile) -> bytes:
     return bytes(buf)
 
 
+def _process_image(data: bytes, opts: CropOptions) -> tuple[bytes, str]:
+    fmt = "JPEG" if opts.format == "jpeg" else "PNG"
+    return crop_poster_from_bytes(
+        data, border_color=tuple(opts.border_color), tol=opts.tol,
+        min_ratio=opts.min_ratio, pad=opts.pad, fmt=fmt,
+    )
+
+
 async def _crop(request: Request, url: str | None, file: UploadFile | None,
                 opts: CropOptions) -> tuple[bytes, str]:
-    fmt = "JPEG" if opts.format == "jpeg" else "PNG"
-    try:
-        if url:
+    if url:
+        try:
             return await crop_poster_from_url(
                 request.app.state.client, url,
                 border_color=tuple(opts.border_color), tol=opts.tol,
-                min_ratio=opts.min_ratio, pad=opts.pad, fmt=fmt,
+                min_ratio=opts.min_ratio, pad=opts.pad, fmt=opts.format,
             )
-        data = await _read_upload(file)
-        return crop_poster_from_bytes(
-            data, border_color=tuple(opts.border_color), tol=opts.tol,
-            min_ratio=opts.min_ratio, pad=opts.pad, fmt=fmt,
-        )
+        except Exception as exc:
+            raise _http_error(exc) from exc
+    data = await _read_upload(file)
+    try:
+        return await asyncio.to_thread(_process_image, data, opts)
     except Exception as exc:
         raise _http_error(exc) from exc
 
