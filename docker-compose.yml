@@ -3,11 +3,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: autocut-2:latest
+    restart: unless-stopped
     ports:
-      - "5000:8000"
+      # host:container — override dengan HOST_PORT=xxxx docker compose up -d
+      - "${HOST_PORT:-5000}:8000"
     environment:
-      - PORT=8000
-      - WEB_CONCURRENCY=2
-      - PATH=/app/.venv/bin:$PATH
-    volumes:
-      - .:/app
+      # PORT adalah port DI DALAM container (8000); host memakai 5000
+      PORT: "8000"
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY:-2}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,os;urllib.request.urlopen('http://127.0.0.1:%s/healthz'%os.getenv('PORT','8000'),timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    # JANGAN bind-mount .:/app — volume akan menutupi /app/.venv milik image dengan venv
+    # host (shebang-nya menunjuk path host) sehingga `uvicorn: not found`.

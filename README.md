@@ -61,6 +61,16 @@ uv run uvicorn autocut_2.api:app --host 0.0.0.0 --port 8000 \
 Docker:
 
 ```bash
+# image standalone (port dari env PORT, default 8000)
 docker build -t autocut-2 .
-docker run -p 8000:8000 -e WEB_CONCURRENCY=4 autocut-2
+docker run --rm -p 5000:8000 -e WEB_CONCURRENCY=4 autocut-2
+
+# atau lewat compose (host port default 5000, override: HOST_PORT=xxxx)
+docker compose up -d --build
+docker compose ps        # tunggu status "healthy"
+curl -s http://127.0.0.1:5000/healthz
 ```
+
+Image berbasis `python:3.14-slim` (sesuai `.python-version`), berjalan sebagai user non-root
+`app` (uid 10001). Aplikasi di-bake ke image — jangan bind-mount project ke `/app`
+(lihat komentar di `docker-compose.yml`).

@@ -3,6 +3,12 @@
 __pycache__/
 *.py[oc]
 tests/
+scripts/
+outputs/
+.pytest_cache/
 .env
 dist/
 build/
+*.egg-info/
+Dockerfile
+docker-compose.yml
