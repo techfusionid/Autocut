@@ -1,0 +1,38 @@
+[project]
+name = "autocut-2"
+version = "0.1.0"
+description = "Poster cropper HTTP API"
+readme = "README.md"
+authors = [
+    { name = "wahyudesu", email = "wahyuikbal777@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "numpy>=2.1",
+    "pillow>=11.0",
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+autocut-2 = "autocut_2:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
