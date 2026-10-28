@@ -18,10 +18,12 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.responses import JSONResponse, Response
 
 from autocut_api.detection import FrameDetectionUncertain, detect_frame_box
+from autocut_api.fetch import FetchError, fetch_image_url
 
 MULTIPART_OVERHEAD_LIMIT = 64 * 1024
 MAX_FORM_FIELD_BYTES = 64 * 1024
-_FIELDS = {"image", "mode", "crop_left", "crop_top", "crop_right", "crop_bottom"}
+SUPPORTED_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
+_FIELDS = {"image", "image_url", "mode", "crop_left", "crop_top", "crop_right", "crop_bottom"}
 _CROP_FIELDS = ("crop_left", "crop_top", "crop_right", "crop_bottom")
 
 
@@ -54,12 +56,14 @@ def _install_error_handlers(app: FastAPI) -> None:
 class Settings:
     max_upload_bytes: int = 15 * 1024 * 1024
     max_image_pixels: int = 25_000_000
+    image_fetch_timeout: float = 15.0
 
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
             max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024),
             max_image_pixels=_positive_int("MAX_IMAGE_PIXELS", 25_000_000),
+            image_fetch_timeout=_positive_float("IMAGE_FETCH_TIMEOUT", 15.0),
         )
 
 
@@ -80,7 +84,7 @@ class LimitedParser(MultiPartParser):
     """Reject a file as soon as its multipart part exceeds the configured limit."""
 
     def __init__(self, headers: Headers, stream: Any, max_file_bytes: int) -> None:
-        super().__init__(headers, stream, max_files=1, max_fields=5, max_part_size=MAX_FORM_FIELD_BYTES)
+        super().__init__(headers, stream, max_files=1, max_fields=len(_FIELDS), max_part_size=MAX_FORM_FIELD_BYTES)
         self.max_file_bytes = max_file_bytes
         self._file_bytes = 0
 
@@ -189,8 +193,12 @@ def _validate_image(payload: bytes, max_image_pixels: int) -> tuple[int, int]:
                 _check_pixels(probe.width, probe.height, max_image_pixels)
                 if getattr(probe, "is_animated", False) or getattr(probe, "n_frames", 1) > 1:
                     raise ImageError("animated_image_unsupported", "Animated images are not supported.")
-                if file_format not in {"JPEG", "PNG"}:
-                    raise ImageError("unsupported_image_format", "Only static JPEG and PNG images are supported.", 415)
+                if file_format not in SUPPORTED_FORMATS:
+                    raise ImageError(
+                        "unsupported_image_format",
+                        "Only static JPEG, PNG, and WebP images are supported.",
+                        415,
+                    )
                 probe.verify()
             with Image.open(BytesIO(payload)) as image:
                 image.load()
@@ -218,6 +226,17 @@ def _positive_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be a positive integer.") from exc
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
+    return value
+
+
+def _positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    try:
+        value = default if raw is None else float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive number.") from exc
+    if not 0.1 <= value <= 120:
+        raise ValueError(f"{name} must be a positive number.")
     return value
 
 
@@ -260,17 +279,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise api_error(422, "invalid_input", "Unexpected or repeated multipart field.")
                 fields[name] = value
             upload = fields.get("image")
-            if not isinstance(upload, UploadFile):
+            remote_url = fields.get("image_url")
+            if upload is not None and remote_url is not None:
+                raise api_error(422, "invalid_input", "Send either image or image_url, not both.")
+            if upload is None and remote_url is None:
+                raise api_error(422, "invalid_input", "Provide an image file or an image_url.")
+            if upload is not None and not isinstance(upload, UploadFile):
                 raise api_error(422, "invalid_input", "The image field must contain a file.")
+            if remote_url is not None and not isinstance(remote_url, str):
+                raise api_error(422, "invalid_url", "image_url must be a valid http or https URL.")
             mode = fields.get("mode", "auto")
             if not isinstance(mode, str) or mode not in {"auto", "manual"}:
                 raise api_error(422, "invalid_mode", "mode must be 'auto' or 'manual'.")
             if mode == "auto" and any(name in fields for name in _CROP_FIELDS):
                 raise api_error(422, "invalid_input", "Crop margins are only valid in manual mode.")
             margins = _parse_margins(fields)
-            payload = await upload.read(app.state.settings.max_upload_bytes + 1)
-            if len(payload) > app.state.settings.max_upload_bytes:
-                raise api_error(413, "upload_too_large", "Upload exceeds the configured file-size limit.")
+            if upload is not None:
+                payload = await upload.read(app.state.settings.max_upload_bytes + 1)
+                if len(payload) > app.state.settings.max_upload_bytes:
+                    raise api_error(413, "upload_too_large", "Upload exceeds the configured file-size limit.")
+            else:
+                try:
+                    payload = await fetch_image_url(
+                        remote_url,
+                        max_bytes=app.state.settings.max_upload_bytes,
+                        timeout=app.state.settings.image_fetch_timeout,
+                    )
+                except FetchError as exc:
+                    raise api_error(exc.status_code, exc.code, exc.message) from exc
             try:
                 result = await asyncio.to_thread(
                     crop_image_bytes,
