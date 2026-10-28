@@ -1,11 +1,17 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "9000:8000"
     environment:
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-15728640}
       MAX_IMAGE_PIXELS: ${MAX_IMAGE_PIXELS:-25000000}
+      IMAGE_FETCH_TIMEOUT: ${IMAGE_FETCH_TIMEOUT:-15}
     networks:
       - autocut
     healthcheck:
@@ -13,6 +19,7 @@ services:
       interval: 15s
       timeout: 3s
       retries: 3
+      start_period: 10s
 
 networks:
   autocut:

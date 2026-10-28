@@ -1,4 +1,6 @@
 fastapi==0.159.1
+httpcore==1.0.9
+httpx==0.28.1
 pillow==13.0.0
 python-multipart==0.0.32
 uvicorn==0.53.0
